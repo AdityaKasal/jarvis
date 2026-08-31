@@ -125,6 +125,10 @@ is small, and the system prompt is cached. Switch to `claude-sonnet-5` in
 ElevenLabs `eleven_flash_v2_5` is their lowest-latency model, and audio comes
 back as raw 16 kHz PCM so there is no decode step and no ffmpeg dependency.
 
+The default voice is a *premade* one (`River`). Free accounts cannot use
+*library* voices through the API - those fail with a 402, not a permissions
+error - so if you change `tts.voice_id`, pick from `run.py voices`.
+
 ## Layout
 
 ```

@@ -29,9 +29,10 @@ from jarvis.config import load_config, require_env
 
 log = logging.getLogger("jarvis")
 
-# httpx logs a line per request at INFO, which in a voice loop is one line per
-# sentence spoken. Useful at -v, noise otherwise.
-_CHATTY = ("httpx", "httpcore", "urllib3", "anthropic", "elevenlabs",
+# These log a line per HTTP request at INFO, which in a voice loop is a line
+# per sentence spoken. Useful at -v, noise otherwise. "httpx2" is the one that
+# matters: anthropic 1.x is built on httpx2, not httpx.
+_CHATTY = ("httpx", "httpx2", "httpcore", "urllib3", "anthropic", "elevenlabs",
            "faster_whisper", "huggingface_hub")
 
 
@@ -260,6 +261,22 @@ def cmd_memory(cfg: dict, args) -> int:
     return 0
 
 
+def _why(exc: Exception) -> str:
+    """One readable line from an SDK exception.
+
+    Both SDKs put the useful sentence inside a `body` dict and stringify to a
+    full dump of response headers, which buries it.
+    """
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        detail = body.get("detail", body)
+        if isinstance(detail, dict) and detail.get("message"):
+            return f"{type(exc).__name__}: {detail['message']}"
+        if body.get("error", {}).get("message"):
+            return f"{type(exc).__name__}: {body['error']['message']}"
+    return f"{type(exc).__name__}: {exc}"
+
+
 def cmd_doctor(cfg: dict) -> int:
     """Check everything that can be checked without saying a word."""
     ok = True
@@ -294,6 +311,21 @@ def cmd_doctor(cfg: dict) -> int:
         print(f"  FAIL  whisper: {type(exc).__name__}: {exc}")
         ok = False
 
+    if os.environ.get("ELEVENLABS_API_KEY"):
+        try:
+            from jarvis.tts import Voice
+            # Synthesise one word and count the bytes. This is what catches a
+            # key that is set but wrong, or one whose Text to Speech permission
+            # was left at No Access - neither shows up until you try to speak.
+            audio = b"".join(Voice(cfg).stream("ok"))
+            print(f"  ok    ElevenLabs {cfg['tts']['model_id']} synthesised "
+                  f"{len(audio) / (cfg['audio']['sample_rate'] * 2):.1f}s of audio")
+        except Exception as exc:
+            print(f"  FAIL  ElevenLabs: {_why(exc)}")
+            print(f"        (voice {cfg['tts']['voice_id']}; "
+                  "`run.py voices` lists the ones on your account)")
+            ok = False
+
     if os.environ.get("ANTHROPIC_API_KEY"):
         try:
             import anthropic
@@ -305,7 +337,7 @@ def cmd_doctor(cfg: dict) -> int:
                   f"({reply.usage.input_tokens} in / "
                   f"{reply.usage.output_tokens} out)")
         except Exception as exc:
-            print(f"  FAIL  Claude: {type(exc).__name__}: {exc}")
+            print(f"  FAIL  Claude: {_why(exc)}")
             ok = False
 
     print("\nAll good." if ok else "\nSomething above needs fixing.")

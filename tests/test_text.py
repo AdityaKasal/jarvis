@@ -82,3 +82,20 @@ def test_strips_markdown_that_would_be_read_aloud():
 def test_strip_leaves_ordinary_prose_alone():
     prose = "It's about twenty past four, and the answer is no."
     assert strip_for_speech(prose) == prose
+
+
+def test_tts_client_does_not_depend_on_import_order(monkeypatch):
+    """The ElevenLabs SDK reads its key into an import-time default argument.
+
+    Importing jarvis.tts before .env is loaded used to yield a client with no
+    credentials at all, failing later as a 401 that looked like a bad key.
+    """
+    import jarvis.tts
+
+    captured = {}
+    monkeypatch.setattr(jarvis.tts, "ElevenLabs",
+                        lambda **kw: captured.update(kw) or object())
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "sk_from_env")
+
+    jarvis.tts.Voice({"tts": {}})
+    assert captured["api_key"] == "sk_from_env"

@@ -9,6 +9,8 @@ from typing import Any, Iterator
 from elevenlabs.client import ElevenLabs
 from elevenlabs.types.voice_settings import VoiceSettings
 
+from jarvis.config import require_env
+
 log = logging.getLogger("jarvis.tts")
 
 # Raw signed 16-bit PCM at the same rate whisper wants, which means no decoding
@@ -21,7 +23,12 @@ class Voice:
 
     def __init__(self, config: dict[str, Any]):
         tts = config.get("tts", {}) or {}
-        self.client = ElevenLabs()
+        # Explicit, not ElevenLabs(): the SDK reads ELEVENLABS_API_KEY into a
+        # *default argument*, which is evaluated when the module is imported.
+        # Import this module before .env is loaded and the client silently
+        # authenticates as nobody, which the API reports as a 401 that looks
+        # like a bad key rather than a bad import order.
+        self.client = ElevenLabs(api_key=require_env("ELEVENLABS_API_KEY"))
         self.voice_id = tts.get("voice_id", "21m00Tcm4TlvDq8ikWAM")
         self.model_id = tts.get("model_id", "eleven_flash_v2_5")
         self.settings = VoiceSettings(
