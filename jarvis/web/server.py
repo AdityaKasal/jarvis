@@ -83,6 +83,9 @@ class JarvisApp:
             "model": self.config["model"]["id"],
             "voice_id": self.config["tts"]["voice_id"],
             "whisper": self.config["stt"]["model"],
+            "wake_words": ((self.config.get("wake") or {}).get("words") or []
+                           if (self.config.get("wake") or {}).get("enabled", True)
+                           else []),
             "facts": self.assistant.memory.facts(),
             "turns": self.assistant.memory.turns_after(
                 self.assistant.session_id, 0, limit=50),

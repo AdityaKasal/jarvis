@@ -39,6 +39,7 @@ h1 { font-size: 21px; margin: 0; letter-spacing: -0.01em; }
 .status { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .orb { width: 13px; height: 13px; border-radius: 50%; background: var(--muted);
   flex: none; }
+.orb.asleep    { background: var(--muted); opacity: .5; }
 .orb.listening { background: var(--ok); animation: breathe 2.4s ease-in-out infinite; }
 .orb.hearing   { background: var(--accent); animation: breathe .7s ease-in-out infinite; }
 .orb.transcribing, .orb.thinking { background: var(--warn);
@@ -69,6 +70,8 @@ h1 { font-size: 21px; margin: 0; letter-spacing: -0.01em; }
 .turn.assistant .what { color: var(--ink); }
 .what { white-space: pre-wrap; word-break: break-word; }
 .what.partial { color: var(--muted); }
+.turn.ignored .what { color: var(--muted); font-style: italic; font-size: 13.5px; }
+.turn.ignored .who { opacity: .6; }
 .empty { color: var(--muted); font-size: 13.5px; }
 
 /* controls */
@@ -145,6 +148,7 @@ h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
 const $ = (id) => document.getElementById(id);
 const HINTS = {
   starting:     "Loading the speech model...",
+  asleep:       "Say the wake word to start talking.",
   listening:    "Talk whenever you like.",
   hearing:      "Hearing you - keep going.",
   transcribing: "Working out what you said.",
@@ -153,6 +157,7 @@ const HINTS = {
   stopped:      "Press Start to begin listening.",
 };
 let partial = null;
+let wakeWords = [];
 
 function setState(value) {
   $("orb").className = "orb " + value;
@@ -161,6 +166,9 @@ function setState(value) {
   const running = value !== "stopped";
   $("startBtn").disabled = running;
   $("stopBtn").disabled = !running;
+  if (value === "asleep" && wakeWords.length) {
+    $("hint").textContent = 'Say "' + wakeWords[0] + '" to start talking.';
+  }
   $("interruptBtn").disabled = value !== "speaking";
   if (value !== "speaking") clearPartial();
 }
@@ -176,7 +184,8 @@ function addTurn(role, text, isPartial) {
   const el = document.createElement("div");
   el.className = "turn " + role;
   el.innerHTML = `<div class="who"></div><div class="what"></div>`;
-  el.querySelector(".who").textContent = role === "user" ? "you" : "jarvis";
+  el.querySelector(".who").textContent =
+    role === "user" ? "you" : role === "ignored" ? "ignored" : "jarvis";
   const what = el.querySelector(".what");
   what.textContent = text;
   if (isPartial) what.classList.add("partial");
@@ -222,6 +231,12 @@ fetch("/api/state").then(r => r.json()).then(s => {
     const c = document.createElement("span");
     c.className = "chip"; c.textContent = t; $("chips").appendChild(c);
   }
+  wakeWords = s.wake_words || [];
+  if (wakeWords.length) {
+    const c = document.createElement("span");
+    c.className = "chip"; c.textContent = 'wake: "' + wakeWords[0] + '"';
+    $("chips").appendChild(c);
+  }
   for (const turn of s.turns) addTurn(turn.role, turn.content, false);
   renderFacts(s.facts);
   setState(s.state);
@@ -239,6 +254,12 @@ events.onmessage = (e) => {
     else { const w = partial.querySelector(".what");
            w.textContent = w.textContent + " " + ev.text; }
     $("transcript").scrollTop = $("transcript").scrollHeight;
+  }
+  else if (ev.type === "ignored") {
+    // Heard and understood, but not addressed to Jarvis. Shown so the app
+    // does not look broken when it deliberately does nothing.
+    clearPartial();
+    addTurn("ignored", ev.text, false);
   }
   else if (ev.type === "facts") renderFacts(ev.facts);
   else if (ev.type === "error") banner(ev.message);

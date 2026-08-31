@@ -10,7 +10,8 @@ Claude → [ElevenLabs](https://elevenlabs.io) → audio out.
 
 That screenshot is a real exchange - spoken aloud, transcribed locally, and
 answered using what Jarvis had been told to remember earlier. The orange mark
-on the meter is the level your voice has to cross for a turn to start.
+on the meter is the level your voice has to cross for a turn to start; it is
+asleep here, waiting to hear its name.
 
 ## How it works
 
@@ -32,6 +33,15 @@ listen and compares each 20 ms frame against it, so the thresholds in
 `config.yaml` are ratios that hold up in a quiet room and a loud one. A
 pre-roll buffer keeps the 300 ms *before* the trigger, which is what stops the
 first syllable being clipped off the front.
+
+**It only answers when spoken to.** Without a wake word, an always-listening
+loop treats a television as a conversation partner - during testing it
+transcribed a sitcom and answered it. `jarvis/wake.py` matches the wake word
+against the transcript, fuzzily, because whisper renders the name as "Javis"
+and "jarvis." often enough that exact matching does not work. Anything
+unaddressed is transcribed, shown greyed in the app, and dropped before it
+reaches Claude. After it answers, a 45-second window stays open so a follow-up
+question is just a follow-up question.
 
 **Replies are spoken sentence by sentence.** Claude's output is streamed, cut
 into sentences as they complete (`jarvis/text.py`), and each one is sent to
@@ -110,7 +120,7 @@ Other commands:
 
 | Command | What it does |
 |---|---|
-| `app` | The browser UI. `-p` changes the port, `--no-browser` skips opening it. |
+| `app` | The browser UI. Say the wake word to start talking. `-p` changes the port, `--no-browser` skips opening it. |
 | `chat` | Same brain, same memory, over the keyboard. No mic, no API spend on TTS. |
 | `say "text"` | Speak one line. Checks ElevenLabs and your speakers. |
 | `listen -o out.wav` | Capture one utterance the way `talk` does, and transcribe it. |
@@ -149,11 +159,13 @@ after half a sentence. Turn it on if you wear headphones.
 
 ## Known limitations
 
-**There is no wake word.** Once started, it treats anything above the trigger
-threshold as speech aimed at it - including a television in the same room. In
-testing it cheerfully transcribed a sitcom and answered it. Press Stop when you
-are not talking to it, or it will keep spending tokens on the room. A wake word
-or push-to-talk is the obvious next feature.
+**The wake word is matched on the transcript, not the audio.** While asleep,
+whisper still runs on every noise burst - it is the reply that is withheld, not
+the transcription. That costs CPU but no money and no absurd answers. A
+dedicated engine (Porcupine, openWakeWord) would skip whisper entirely and use
+far less power, at the price of a heavy dependency, a model file, and in
+Porcupine's case a third API key. Worth revisiting if this ever runs on
+battery.
 
 **Barge-in is off by default.** Interrupting Jarvis mid-sentence needs acoustic
 echo cancellation, which this does not have; on open speakers it hears its own
@@ -193,6 +205,7 @@ run.py                 CLI: every command above
 config.yaml            behaviour            .env  secrets
 jarvis/
   assistant.py         Assistant (a conversation) + VoiceSession (the audio loop)
+  wake.py              wake word matching, fuzzy, on the transcript
   events.py            pub/sub bus - the console and the browser both subscribe
   web/server.py        stdlib HTTP + server-sent events
   web/ui.html          the app, one self-contained page

@@ -10,6 +10,7 @@ from typing import Any, Callable, Optional
 from jarvis.audio import Microphone, Speaker, Vad, VadConfig, listen
 from jarvis.brain import Brain
 from jarvis.events import EventBus
+from jarvis.wake import WakeWord
 from jarvis.memory import Memory
 from jarvis.stt import Transcriber
 from jarvis.tools import Toolbox
@@ -45,6 +46,12 @@ class Assistant:
     @property
     def should_end(self) -> bool:
         return self.toolbox.should_end
+
+    @should_end.setter
+    def should_end(self, value: bool) -> None:
+        # Cleared when a farewell only puts Jarvis back to sleep, so the next
+        # conversation does not inherit the last one's decision to end.
+        self.toolbox.should_end = value
 
     def turn(self, user_text: str,
              on_sentence: Optional[Callable[[str], Any]] = None) -> str:
@@ -139,7 +146,7 @@ class VoiceSession:
     talk` and the app without a second implementation.
     """
 
-    STATES = ("starting", "listening", "hearing", "transcribing",
+    STATES = ("starting", "asleep", "listening", "hearing", "transcribing",
               "thinking", "speaking", "stopped")
 
     def __init__(self, assistant: Assistant, config: dict[str, Any],
@@ -171,6 +178,14 @@ class VoiceSession:
         self._stop_watching = threading.Event()
         self._stopping = threading.Event()
 
+        wake_cfg = config.get("wake", {}) or {}
+        self.wake = WakeWord.from_config(config)
+        self.stay_awake_s = wake_cfg.get("stay_awake_s", 45)
+        self.acknowledgement = wake_cfg.get("acknowledgement", "Yes?")
+        # Monotonic deadline; 0 means asleep. Not a bool, because "awake" is a
+        # window that expires rather than a state something has to clear.
+        self._awake_until = 0.0
+
         assistant_cfg = config.get("assistant", {}) or {}
         self.greeting = assistant_cfg.get("greeting", "I'm listening.")
         self.farewells = [f.lower() for f in assistant_cfg.get("farewells", [])]
@@ -186,6 +201,8 @@ class VoiceSession:
         self.events.publish("state", value=state)
         if self.console:
             labels = {"listening": "[listening]", "hearing": "[hearing you]",
+                      "asleep": f"[asleep - say \"{self.wake.phrases[0][0]}\"]"
+                                if self.wake.phrases else "[asleep]",
                       "transcribing": "[transcribing]", "thinking": "[thinking]",
                       "speaking": "[speaking]", "stopped": "[stopped]"}
             if state in labels:
@@ -206,6 +223,18 @@ class VoiceSession:
                             threshold=round(max(self.vad.noise_floor
                                                 * self.vad.config.start_ratio,
                                                 self.vad.config.absolute_floor), 5))
+
+    @property
+    def awake(self) -> bool:
+        if not self.wake.enabled:
+            return True
+        return time.monotonic() < self._awake_until
+
+    def _stay_awake(self) -> None:
+        self._awake_until = time.monotonic() + self.stay_awake_s
+
+    def _sleep(self) -> None:
+        self._awake_until = 0.0
 
     # --- control ---
 
@@ -241,7 +270,7 @@ class VoiceSession:
 
     def _loop(self) -> None:
         while not self.stopping:
-            self._set_state("listening")
+            self._set_state("listening" if self.awake else "asleep")
             audio = listen(self.mic, self.vad,
                            on_speech_start=lambda: self._set_state("hearing"),
                            stop_check=lambda: self._stopping.is_set(),
@@ -256,16 +285,42 @@ class VoiceSession:
                           audio.size / self.sample_rate)
                 continue
 
-            self._say_turn("user", heard)
-            if self._is_farewell(heard):
+            asked = self._address(heard)
+            if asked is None:
+                # Heard, understood, and not for us. Published so the app can
+                # show why nothing happened, rather than looking broken.
+                log.debug("ignored (no wake word): %r", heard)
+                self.events.publish("ignored", text=heard)
+                continue
+
+            self._stay_awake()
+            self._say_turn("user", asked or heard)
+
+            if not asked:
+                # Woken by name with nothing else said.
+                if self.acknowledgement:
+                    self.say(self.acknowledgement)
+                continue
+
+            if self._is_farewell(asked):
                 self.say("Goodbye.")
+                # With a wake word there is somewhere to go back to, so a
+                # farewell means "stop listening", not "quit".
+                if self.wake.enabled:
+                    self._sleep()
+                    continue
                 return
 
-            reply = self._answer(heard)
+            reply = self._answer(asked)
             if reply:
                 self._say_turn("assistant", reply)
             self.events.publish("facts", facts=self.assistant.memory.facts())
+            self._stay_awake()
             if self.assistant.should_end:
+                self.assistant.should_end = False
+                if self.wake.enabled:
+                    self._sleep()
+                    continue
                 return
 
     def _answer(self, heard: str) -> str:
@@ -299,6 +354,15 @@ class VoiceSession:
         self._say_turn("assistant", text)
         self.speaker.play(self.voice.stream(text))
         self.speaker.drain()
+
+    def _address(self, heard: str) -> Optional[str]:
+        """What was actually asked, or None if this was not addressed to us.
+
+        An empty string means the wake word was said on its own.
+        """
+        if self.awake:
+            return heard
+        return self.wake.find(heard)
 
     def _is_farewell(self, heard: str) -> bool:
         cleaned = heard.lower().strip().strip(".!?")
