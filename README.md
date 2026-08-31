@@ -220,7 +220,7 @@ jarvis/
     vad.py             turn detection
     recorder.py        microphone capture
     player.py          interruptible playback
-scripts/               make_launchers.py
+scripts/               make_launchers.py, integration_check.py
 tests/                 pytest; no API keys or audio hardware needed
 ```
 
@@ -238,3 +238,25 @@ the memory window, and the streaming tool loop against a stubbed API.
 ## License
 
 MIT - see [LICENSE](LICENSE).
+
+## Testing
+
+```bash
+.venv/bin/python -m pytest tests -q
+```
+
+76 tests, no API keys and no audio hardware required.
+
+The wake word and the follow-up window need the whole pipeline running, so they
+have a separate check that spends real money and is not part of `pytest`:
+
+```bash
+.venv/bin/python scripts/integration_check.py
+```
+
+It runs the genuine loop - VAD, whisper, wake word, Claude, ElevenLabs - and
+replaces only the microphone, feeding audio in directly rather than through the
+room. That separation is deliberate: an acoustic test needs a quiet room, and
+rooms have televisions in them. The first version of this check failed for
+exactly that reason, and the television it kept transcribing is why the wake
+word exists.

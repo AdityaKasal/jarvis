@@ -105,14 +105,45 @@ def test_gives_up_on_an_endless_utterance():
     assert vad.duration_s == pytest.approx(CONFIG.max_utterance_s, abs=0.1)
 
 
-def test_reset_clears_state_between_turns():
+def test_reset_clears_the_turn_but_keeps_the_noise_floor():
     vad = Vad(CONFIG)
     feed(vad, [noise()] * CONFIG.calibration_frames + [speech()] * 10)
     assert vad.speaking
+    floor = vad.noise_floor
+
     vad.reset()
     assert not vad.speaking
-    assert not vad.calibrated
     assert vad.audio().size == 0
+    # Still calibrated: re-measuring every turn would spend the first
+    # calibration_ms of the next turn treating speech as silence.
+    assert vad.calibrated
+    assert vad.noise_floor == floor
+
+
+def test_recalibrate_measures_the_room_again():
+    vad = Vad(CONFIG)
+    feed(vad, [noise()] * CONFIG.calibration_frames)
+    assert vad.calibrated
+    vad.recalibrate()
+    assert not vad.calibrated
+    assert vad.noise_floor == 0.0
+
+
+def test_a_second_turn_does_not_lose_its_opening_word():
+    """The bug this guards: reset() used to clear the calibration too, so the
+    first calibration_ms of every turn after the first was swallowed as noise
+    floor. With a wake word at the front of the sentence, the swallowed part
+    is the only part that decides whether Jarvis answers at all."""
+    vad = Vad(CONFIG)
+    feed(vad, [noise()] * CONFIG.calibration_frames + [speech()] * 20
+         + [noise()] * (CONFIG.hangover_frames + 2))
+
+    vad.reset()
+    # Second turn starts talking immediately - no silence to calibrate on.
+    events = feed(vad, [speech()] * 20)
+    assert [kind for _, kind in events] == ["started"]
+    # And the opening frames are in the captured audio, not eaten by calibration.
+    assert vad.duration_s > 0.2
 
 
 def test_onset_survives_the_gaps_between_syllables():

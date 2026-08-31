@@ -100,18 +100,33 @@ class Vad:
     def __init__(self, config: VadConfig):
         self.config = config
         self._preroll: deque[np.ndarray] = deque(maxlen=config.preroll_frames)
-        self.reset()
+        self.recalibrate()
 
     def reset(self) -> None:
-        self.noise_floor = 0.0
+        """Clear the current utterance, keeping the measured noise floor.
+
+        The floor deliberately survives. Re-measuring it at the start of every
+        turn means the first `calibration_ms` of that turn is swallowed as
+        "silence", so anyone who starts talking the moment Jarvis stops loses
+        their opening word - which, with a wake word, is the only word that
+        mattered. Speech captured during calibration also raises the floor, so
+        the rest of that turn may never cross the threshold at all.
+
+        The floor still follows the room: `feed` adapts it while waiting.
+        """
         self.speaking = False
         self.finished = False
-        self._calibration: list[float] = []
         self._speech_run = 0
         self._onset_gap = 0
         self._silence_run = 0
         self._frames: list[np.ndarray] = []
         self._preroll.clear()
+
+    def recalibrate(self) -> None:
+        """Forget the noise floor and measure it again from scratch."""
+        self.reset()
+        self.noise_floor = 0.0
+        self._calibration: list[float] = []
 
     @property
     def calibrated(self) -> bool:
