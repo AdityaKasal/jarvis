@@ -66,6 +66,20 @@ barge_in:
   enabled: false
   ratio: 6.0            # far stricter than vad.start_ratio, for the same reason
 
+wake:
+  # Without this, anything above the trigger threshold is treated as speech
+  # aimed at Jarvis - including a television in the same room, which it will
+  # cheerfully transcribe and answer.
+  enabled: true
+  # Matched against the transcript, fuzzily: whisper renders the name as
+  # "Javis" and "jarvis." often enough that exact matching does not work.
+  words: ["jarvis", "hey jarvis", "okay jarvis"]
+  # After it answers, keep listening this long without needing the wake word
+  # again, so a follow-up question is just a follow-up question.
+  stay_awake_s: 45
+  # Spoken when woken with nothing else said ("Jarvis?"). Blank for silence.
+  acknowledgement: "Yes?"
+
 memory:
   db: jarvis.db
   recent_turns: 20      # turns replayed verbatim into the prompt
