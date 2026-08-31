@@ -160,13 +160,13 @@ after half a sentence. Turn it on if you wear headphones.
 ## Known limitations
 
 **Barge-in needs headphones, not speakers.** Interrupting a reply mid-sentence
-is on by default now, but measured on a laptop the assistant's own voice
+is off by default, and the measurements are why: on a laptop the assistant's own voice
 reaches the microphone at about 0.017 while a normal speaking voice measures
 about 0.016 - the echo is louder than the speaker. No threshold separates them,
 and testing bore that out: one run cut itself off after six seconds, another
 ignored a genuine interruption. The 250ms sustain requirement helps, because
 echo peaks are short, but it is not decisive. With headphones the echo
-disappears and it behaves. Set `barge_in.enabled: false` if it is annoying you.
+disappears and it behaves - set `barge_in.enabled: true` when you put them on.
 
 **The wake word is matched on the transcript, not the audio.** While asleep,
 whisper still runs on every noise burst - it is the reply that is withheld, not
