@@ -16,16 +16,19 @@ model:
 audio:
   sample_rate: 16000    # whisper's native rate, and what we ask ElevenLabs to return
   frame_ms: 20
-  input_device: null    # null = system default. `python run.py devices` lists them.
+  # null = system default. Worth pinning by name: on a Mac the default
+  # follows whatever Bluetooth device is connected, so a car handsfree can
+  # quietly become your microphone. `python run.py devices` lists them.
+  input_device: "MacBook Pro Microphone"
   output_device: null
 
 vad:
   # Speech is detected by comparing frame RMS against a noise floor measured
   # during the first moment of each listen. Ratios, not absolute levels, so the
   # same numbers work in a quiet room and a loud one.
-  start_ratio: 3.0
-  stop_ratio: 1.8         # lower than start_ratio: once talking, stay latched
-  absolute_floor: 0.004   # never trigger below this, however quiet the room is
+  start_ratio: 2.0
+  stop_ratio: 1.5         # lower than start_ratio: once talking, stay latched
+  absolute_floor: 0.0069   # never trigger below this, however quiet the room is
   min_speech_ms: 250      # discard clicks, keyboard taps, door slams
   silence_hangover_ms: 800  # how long a mid-sentence pause may run before the turn ends
   preroll_ms: 300         # audio kept from *before* the trigger, so the first
