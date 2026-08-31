@@ -59,12 +59,26 @@ tts:
   speed: 1.0
 
 barge_in:
-  # Cut playback short when you start talking over it. Off by default: with no
-  # acoustic echo cancellation, open speakers feed Jarvis's own voice back into
-  # the mic and it interrupts itself after half a sentence. Turn it on when
-  # you're wearing headphones.
-  enabled: false
-  ratio: 6.0            # far stricter than vad.start_ratio, for the same reason
+  # Cut playback short when you start talking over it. There is no acoustic
+  # echo cancellation here, so on open speakers the risk is that Jarvis hears
+  # its own voice and interrupts itself. Headphones remove the problem
+  # entirely; on speakers, the ratio below has to be measured rather than
+  # guessed - `run.py calibrate` gives you the two numbers it sits between.
+  enabled: true
+  # Tuned against measurement, not guessed. On this machine Jarvis's own voice
+  # reaches the microphone at about 0.014 peak, and a normal speaking voice
+  # measures about 0.016 - so the usable gap is narrow, and the 250ms of
+  # sustained sound required to trigger is doing as much work as the ratio.
+  # On headphones the echo disappears and this can go much lower.
+  # Measured on this machine, and the measurement is not encouraging: Jarvis's
+  # own voice reaches the microphone at about 0.017 peak, while a normal
+  # speaking voice measures about 0.016. The echo is louder than the speaker,
+  # so no threshold separates them by level. Two verification runs disagreed -
+  # one cut itself off after six seconds, the other ignored a real
+  # interruption. On open speakers, expect it to be unreliable in both
+  # directions. On headphones the echo vanishes and it works properly, which
+  # is the configuration this feature is for.
+  ratio: 2.0
 
 wake:
   # Without this, anything above the trigger threshold is treated as speech
