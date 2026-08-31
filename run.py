@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Jarvis, a voice assistant.
 
-    python run.py talk           # the thing itself: speak, and it answers
+    python run.py app            # the app: opens a window in your browser
+    python run.py talk           # the same loop, in the terminal
     python run.py chat           # same brain and memory, over the keyboard
     python run.py say "hello"    # speak one line (checks TTS + speakers)
     python run.py listen -o a.wav  # capture one utterance the way talk does
@@ -19,6 +20,7 @@ import argparse
 import logging
 import os
 import sys
+import threading
 import time
 import wave
 from pathlib import Path
@@ -93,6 +95,33 @@ def cmd_talk(cfg: dict) -> int:
         # Always close the session out: the summary written here is what the
         # next conversation opens with.
         assistant.finish()
+    return 0
+
+
+def cmd_app(cfg: dict, args) -> int:
+    """Serve the browser UI and open it."""
+    import webbrowser
+
+    from jarvis.web import serve
+
+    require_env("ANTHROPIC_API_KEY")
+    require_env("ELEVENLABS_API_KEY")
+
+    server, app = serve(cfg, host=args.host, port=args.port)
+    url = f"http://{args.host}:{args.port}/"
+    print(f"Jarvis is at {url}\nPress Ctrl-C to quit.")
+    if not args.no_browser:
+        # Threaded so a slow or missing browser cannot delay the server that
+        # the browser is about to connect to.
+        threading.Timer(0.4, webbrowser.open, args=(url,)).start()
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[stopping]")
+    finally:
+        server.shutdown()
+        app.shutdown()
     return 0
 
 
@@ -379,7 +408,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-c", "--config", default=None)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("talk", help="the voice loop")
+    sub.add_parser("talk", help="the voice loop, in the terminal")
+
+    p_app = sub.add_parser("app", help="the voice loop, in your browser")
+    p_app.add_argument("-p", "--port", type=int, default=8765)
+    p_app.add_argument("--host", default="127.0.0.1",
+                       help="loopback only by default; this process holds your "
+                            "microphone and your API keys")
+    p_app.add_argument("--no-browser", action="store_true")
     sub.add_parser("chat", help="same assistant, over the keyboard")
     sub.add_parser("devices", help="list audio devices")
     sub.add_parser("voices", help="list ElevenLabs voices")
@@ -411,6 +447,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "talk":
             return cmd_talk(cfg)
+        if args.command == "app":
+            return cmd_app(cfg, args)
         if args.command == "chat":
             return cmd_chat(cfg)
         if args.command == "say":

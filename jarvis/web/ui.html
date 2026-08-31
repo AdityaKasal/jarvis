@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis</title>
+<style>
+:root {
+  --bg: #fbfbfa; --panel: #ffffff; --line: #e6e4e0; --ink: #1b1a18;
+  --muted: #78746e; --accent: #c25a2b; --ok: #3f7d4e; --warn: #b4802a;
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171614; --panel: #201f1c; --line: #33312d; --ink: #edeae5;
+    --muted: #9a948b; --accent: #e0794a; --ok: #6ea97c; --warn: #d3a05a;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1040px; margin: 0 auto; padding: 28px 22px 40px; }
+header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  margin-bottom: 22px; }
+h1 { font-size: 21px; margin: 0; letter-spacing: -0.01em; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.chip { font-size: 11.5px; color: var(--muted); border: 1px solid var(--line);
+  border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+
+.grid { display: grid; grid-template-columns: 1fr 260px; gap: 18px; }
+@media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+.panel { background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 18px; }
+
+/* status */
+.status { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+.orb { width: 13px; height: 13px; border-radius: 50%; background: var(--muted);
+  flex: none; }
+.orb.listening { background: var(--ok); animation: breathe 2.4s ease-in-out infinite; }
+.orb.hearing   { background: var(--accent); animation: breathe .7s ease-in-out infinite; }
+.orb.transcribing, .orb.thinking { background: var(--warn);
+  animation: breathe 1.1s ease-in-out infinite; }
+.orb.speaking  { background: var(--accent); animation: breathe .9s ease-in-out infinite; }
+.orb.starting  { background: var(--warn); animation: breathe 1.6s ease-in-out infinite; }
+@keyframes breathe { 0%,100% { opacity: .35; transform: scale(.85); }
+                     50% { opacity: 1; transform: scale(1.15); } }
+.status-text { font-weight: 550; letter-spacing: -0.01em; }
+.status-hint { color: var(--muted); font-size: 13px; }
+
+/* level meter */
+.meter { position: relative; height: 5px; background: var(--line);
+  border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
+.meter-fill { position: absolute; inset: 0 auto 0 0; width: 0;
+  background: var(--ok); transition: width .08s linear; }
+.meter-mark { position: absolute; top: -3px; bottom: -3px; width: 2px;
+  background: var(--accent); opacity: .8; }
+.meter-legend { display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--muted); margin-bottom: 18px; }
+
+/* transcript */
+.transcript { height: 46vh; min-height: 260px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px; padding-right: 4px; }
+.turn { display: grid; grid-template-columns: 58px 1fr; gap: 10px; }
+.who { font-size: 11.5px; color: var(--muted); text-transform: lowercase;
+  padding-top: 2px; }
+.turn.assistant .what { color: var(--ink); }
+.what { white-space: pre-wrap; word-break: break-word; }
+.what.partial { color: var(--muted); }
+.empty { color: var(--muted); font-size: 13.5px; }
+
+/* controls */
+.controls { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+button { font: inherit; font-size: 13.5px; padding: 7px 15px; cursor: pointer;
+  border-radius: 9px; border: 1px solid var(--line); background: var(--panel);
+  color: var(--ink); transition: border-color .15s, background .15s; }
+button:hover:not(:disabled) { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent);
+  color: #fff; }
+button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+button:disabled { opacity: .4; cursor: not-allowed; }
+
+/* facts */
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+.fact { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.fact:last-child { border-bottom: none; }
+.fact-key { color: var(--muted); font-size: 11.5px; display: block; }
+.banner { display: none; margin-bottom: 16px; padding: 10px 14px;
+  border-radius: 10px; border: 1px solid var(--accent); color: var(--accent);
+  font-size: 13.5px; }
+.banner.show { display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="name">Jarvis</h1>
+    <span class="status-hint" id="tagline">voice assistant</span>
+    <div class="chips" id="chips"></div>
+  </header>
+
+  <div class="banner" id="banner"></div>
+
+  <div class="grid">
+    <main class="panel">
+      <div class="status">
+        <span class="orb" id="orb"></span>
+        <div>
+          <div class="status-text" id="state">Stopped</div>
+          <div class="status-hint" id="hint">Press Start to begin listening.</div>
+        </div>
+      </div>
+
+      <div class="meter">
+        <div class="meter-fill" id="level"></div>
+        <div class="meter-mark" id="mark" style="left:0"></div>
+      </div>
+      <div class="meter-legend">
+        <span>microphone</span>
+        <span id="levelText">--</span>
+      </div>
+
+      <div class="transcript" id="transcript">
+        <div class="empty">Nothing said yet.</div>
+      </div>
+
+      <div class="controls">
+        <button class="primary" id="startBtn">Start listening</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <button id="interruptBtn" disabled>Interrupt</button>
+      </div>
+    </main>
+
+    <aside class="panel">
+      <h2>Remembers</h2>
+      <div id="facts"><div class="empty">Nothing yet.</div></div>
+    </aside>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const HINTS = {
+  starting:     "Loading the speech model...",
+  listening:    "Talk whenever you like.",
+  hearing:      "Hearing you - keep going.",
+  transcribing: "Working out what you said.",
+  thinking:     "Thinking.",
+  speaking:     "Speaking. Say something to cut in, if barge-in is on.",
+  stopped:      "Press Start to begin listening.",
+};
+let partial = null;
+
+function setState(value) {
+  $("orb").className = "orb " + value;
+  $("state").textContent = value[0].toUpperCase() + value.slice(1);
+  $("hint").textContent = HINTS[value] || "";
+  const running = value !== "stopped";
+  $("startBtn").disabled = running;
+  $("stopBtn").disabled = !running;
+  $("interruptBtn").disabled = value !== "speaking";
+  if (value !== "speaking") clearPartial();
+}
+
+function clearPartial() {
+  if (partial) { partial.remove(); partial = null; }
+}
+
+function addTurn(role, text, isPartial) {
+  const list = $("transcript");
+  const empty = list.querySelector(".empty");
+  if (empty) empty.remove();
+  const el = document.createElement("div");
+  el.className = "turn " + role;
+  el.innerHTML = `<div class="who"></div><div class="what"></div>`;
+  el.querySelector(".who").textContent = role === "user" ? "you" : "jarvis";
+  const what = el.querySelector(".what");
+  what.textContent = text;
+  if (isPartial) what.classList.add("partial");
+  list.appendChild(el);
+  list.scrollTop = list.scrollHeight;
+  return el;
+}
+
+function renderFacts(facts) {
+  const box = $("facts");
+  const keys = Object.keys(facts || {});
+  if (!keys.length) { box.innerHTML = '<div class="empty">Nothing yet.</div>'; return; }
+  box.innerHTML = "";
+  for (const k of keys) {
+    const el = document.createElement("div");
+    el.className = "fact";
+    el.innerHTML = '<span class="fact-key"></span><span class="fact-value"></span>';
+    el.querySelector(".fact-key").textContent = k;
+    el.querySelector(".fact-value").textContent = facts[k];
+    box.appendChild(el);
+  }
+}
+
+function banner(message) {
+  const el = $("banner");
+  el.textContent = message;
+  el.classList.add("show");
+}
+
+async function post(path) {
+  try { await fetch(path, { method: "POST" }); }
+  catch (e) { banner("Lost the connection to Jarvis. Is it still running?"); }
+}
+
+$("startBtn").onclick = () => post("/api/start");
+$("stopBtn").onclick = () => post("/api/stop");
+$("interruptBtn").onclick = () => post("/api/interrupt");
+
+fetch("/api/state").then(r => r.json()).then(s => {
+  $("name").textContent = s.name;
+  $("chips").innerHTML = "";
+  for (const t of [s.model, "whisper " + s.whisper, "voice " + s.voice_id.slice(0, 8)]) {
+    const c = document.createElement("span");
+    c.className = "chip"; c.textContent = t; $("chips").appendChild(c);
+  }
+  for (const turn of s.turns) addTurn(turn.role, turn.content, false);
+  renderFacts(s.facts);
+  setState(s.state);
+});
+
+const events = new EventSource("/api/events");
+events.onmessage = (e) => {
+  const ev = JSON.parse(e.data);
+  if (ev.type === "state") setState(ev.value);
+  else if (ev.type === "turn") { clearPartial(); addTurn(ev.role, ev.text, false); }
+  else if (ev.type === "sentence") {
+    // Sentences arrive while Claude is still writing; show them greyed, then
+    // let the final "turn" event replace the lot with the complete reply.
+    if (!partial) partial = addTurn("assistant", ev.text, true);
+    else { const w = partial.querySelector(".what");
+           w.textContent = w.textContent + " " + ev.text; }
+    $("transcript").scrollTop = $("transcript").scrollHeight;
+  }
+  else if (ev.type === "facts") renderFacts(ev.facts);
+  else if (ev.type === "error") banner(ev.message);
+  else if (ev.type === "level") {
+    const scale = Math.max(ev.threshold * 3, 0.02);
+    $("level").style.width = Math.min(100, (ev.value / scale) * 100) + "%";
+    $("mark").style.left = Math.min(100, (ev.threshold / scale) * 100) + "%";
+    $("levelText").textContent = ev.value.toFixed(4);
+  }
+};
+events.onerror = () => banner("Connection to Jarvis dropped. Refresh once it is running again.");
+</script>
+</body>
+</html>

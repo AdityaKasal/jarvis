@@ -112,6 +112,8 @@ def listen(
     vad: Vad,
     on_speech_start: Optional[Callable[[], Any]] = None,
     timeout_s: Optional[float] = None,
+    stop_check: Optional[Callable[[], bool]] = None,
+    on_level: Optional[Callable[[float], Any]] = None,
 ) -> Optional[np.ndarray]:
     """Block until one spoken turn completes; return it as float32 audio.
 
@@ -119,7 +121,9 @@ def listen(
     measured noise floor afterwards - barge-in sets its threshold from it.
 
     Returns None if `timeout_s` elapses with nobody speaking - the caller uses
-    that to notice an empty room rather than hanging on the mic forever.
+    that to notice an empty room rather than hanging on the mic forever - or if
+    `stop_check` returns True, which is how the UI's stop button gets out of a
+    call that would otherwise block on the microphone indefinitely.
     """
     vad.reset()
     mic.drain()
@@ -128,6 +132,11 @@ def listen(
     frame_s = vad.config.frame_ms / 1000
 
     for frame in mic.frames():
+        if stop_check is not None and stop_check():
+            return None
+        if on_level is not None:
+            on_level(rms(frame))
+
         event = vad.feed(frame)
         if event == "started":
             log.debug("speech detected (floor %.4f)", vad.noise_floor)
