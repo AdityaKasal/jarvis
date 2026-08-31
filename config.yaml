@@ -43,7 +43,10 @@ stt:
   beam_size: 1          # greedy; measurably faster and barely worse on clean speech
 
 tts:
-  voice_id: 21m00Tcm4TlvDq8ikWAM  # "Rachel", a stock voice. Swap for any in your account.
+  # "River". A premade voice, which free accounts can use via the API -
+  # library voices (Rachel and friends) are paid-plan only and fail with a
+  # 402. `python run.py voices` lists what your account can actually reach.
+  voice_id: SAz9YHcvj6GT2YYXdXww
   model_id: eleven_flash_v2_5     # ElevenLabs' lowest-latency model
   stability: 0.5
   similarity_boost: 0.75

@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional
 import anthropic
 
 from jarvis import prompts
+from jarvis.config import require_env
 from jarvis.text import SentenceChunker, strip_for_speech
 from jarvis.tools import Toolbox
 
@@ -28,7 +29,10 @@ class Brain:
 
     def __init__(self, config: dict[str, Any], toolbox: Toolbox):
         model_cfg = config.get("model", {}) or {}
-        self.client = anthropic.Anthropic()
+        # The Anthropic SDK resolves credentials at construction rather than
+        # at import, so this is only about the error message - but it costs
+        # nothing to say which key is missing.
+        self.client = anthropic.Anthropic(api_key=require_env("ANTHROPIC_API_KEY"))
         self.model = model_cfg.get("id", "claude-opus-5")
         self.effort = model_cfg.get("effort", "low")
         self.max_tokens = model_cfg.get("max_tokens", 4096)

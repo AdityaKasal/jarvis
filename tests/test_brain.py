@@ -70,6 +70,9 @@ class FakeClient:
 def make_brain(tmp_path, monkeypatch):
     def build(script):
         client = FakeClient(script)
+        # Brain asks for the key by name before constructing a client; the
+        # client itself is stubbed, so any value will do.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
         monkeypatch.setattr("anthropic.Anthropic", lambda *a, **k: client)
         toolbox = Toolbox(Memory(tmp_path / "brain.db"))
         brain = Brain({"model": {"id": "claude-opus-5", "effort": "low",
