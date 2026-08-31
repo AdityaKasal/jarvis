@@ -67,6 +67,33 @@ Settings → Privacy & Security → Microphone for your terminal.
 ## Using it
 
 ```bash
+.venv/bin/python run.py app
+```
+
+That opens Jarvis in your browser: press Start, and you get live state, a
+microphone meter with the trigger threshold marked on it, the transcript as it
+happens, and what Jarvis remembers about you. It works the same on macOS,
+Windows and Linux, because the browser is the only GUI that does.
+
+The audio never goes near the browser - microphone, whisper, ElevenLabs and the
+speaker all stay in the Python process, and the page is a view and three
+buttons. The server is standard library only and binds to loopback, since this
+process holds your microphone and both API keys.
+
+For a double-clickable launcher:
+
+```bash
+.venv/bin/python scripts/make_launchers.py
+```
+
+That writes `launchers/Jarvis.app` (macOS - drag it to the Dock),
+`launchers/Jarvis.bat` (Windows) and `launchers/jarvis.desktop` (Linux). They
+hold absolute paths, so they are generated rather than committed - re-run it
+after moving or cloning the project.
+
+Or stay in the terminal:
+
+```bash
 .venv/bin/python run.py talk
 ```
 
@@ -77,6 +104,7 @@ Other commands:
 
 | Command | What it does |
 |---|---|
+| `app` | The browser UI. `-p` changes the port, `--no-browser` skips opening it. |
 | `chat` | Same brain, same memory, over the keyboard. No mic, no API spend on TTS. |
 | `say "text"` | Speak one line. Checks ElevenLabs and your speakers. |
 | `listen -o out.wav` | Capture one utterance the way `talk` does, and transcribe it. |
@@ -136,6 +164,9 @@ run.py                 CLI: every command above
 config.yaml            behaviour            .env  secrets
 jarvis/
   assistant.py         Assistant (a conversation) + VoiceSession (the audio loop)
+  events.py            pub/sub bus - the console and the browser both subscribe
+  web/server.py        stdlib HTTP + server-sent events
+  web/ui.html          the app, one self-contained page
   brain.py             Claude: streaming, the tool loop, summarisation
   memory.py            SQLite: turns, session summaries, facts
   tools.py             remember_fact, forget_fact, get_current_time, end_conversation
@@ -147,6 +178,7 @@ jarvis/
     vad.py             turn detection
     recorder.py        microphone capture
     player.py          interruptible playback
+scripts/               make_launchers.py
 tests/                 pytest; no API keys or audio hardware needed
 ```
 

@@ -8,3 +8,4 @@ venv/
 recordings/
 .DS_Store
 .pytest_cache/
+launchers/

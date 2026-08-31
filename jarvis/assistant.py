@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 
 from jarvis.audio import Microphone, Speaker, Vad, VadConfig, listen
 from jarvis.brain import Brain
+from jarvis.events import EventBus
 from jarvis.memory import Memory
 from jarvis.stt import Transcriber
 from jarvis.tools import Toolbox
@@ -130,11 +131,23 @@ class Assistant:
 
 
 class VoiceSession:
-    """The audio loop: listen, transcribe, answer, speak, repeat."""
+    """The audio loop: listen, transcribe, answer, speak, repeat.
 
-    def __init__(self, assistant: Assistant, config: dict[str, Any]):
+    Publishes what it is doing to an `EventBus`. The console printer and every
+    connected browser subscribe to that; the loop itself has no idea whether
+    anyone is watching, which is what lets the same code back both `run.py
+    talk` and the app without a second implementation.
+    """
+
+    STATES = ("starting", "listening", "hearing", "transcribing",
+              "thinking", "speaking", "stopped")
+
+    def __init__(self, assistant: Assistant, config: dict[str, Any],
+                 events: Optional[EventBus] = None, console: bool = True):
         self.assistant = assistant
         self.config = config
+        self.events = events or EventBus()
+        self.console = console
 
         audio = config.get("audio", {}) or {}
         self.sample_rate = audio.get("sample_rate", 16000)
@@ -156,53 +169,116 @@ class VoiceSession:
         self.barge_in = bool(barge.get("enabled", False))
         self.barge_ratio = barge.get("ratio", 6.0)
         self._stop_watching = threading.Event()
+        self._stopping = threading.Event()
 
         assistant_cfg = config.get("assistant", {}) or {}
         self.greeting = assistant_cfg.get("greeting", "I'm listening.")
         self.farewells = [f.lower() for f in assistant_cfg.get("farewells", [])]
 
+        self.state = "stopped"
+        # Levels arrive 50x a second; a meter needs about ten.
+        self._last_level_at = 0.0
+
+    # --- observation ---
+
+    def _set_state(self, state: str) -> None:
+        self.state = state
+        self.events.publish("state", value=state)
+        if self.console:
+            labels = {"listening": "[listening]", "hearing": "[hearing you]",
+                      "transcribing": "[transcribing]", "thinking": "[thinking]",
+                      "speaking": "[speaking]", "stopped": "[stopped]"}
+            if state in labels:
+                print(labels[state], flush=True)
+
+    def _say_turn(self, role: str, text: str) -> None:
+        self.events.publish("turn", role=role, text=text)
+        if self.console:
+            who = "you" if role == "user" else self.assistant.brain.name.lower()
+            print(f"{who}: {text}")
+
+    def _report_level(self, level: float) -> None:
+        now = time.monotonic()
+        if now - self._last_level_at < 0.1:
+            return
+        self._last_level_at = now
+        self.events.publish("level", value=round(level, 5),
+                            threshold=round(max(self.vad.noise_floor
+                                                * self.vad.config.start_ratio,
+                                                self.vad.config.absolute_floor), 5))
+
+    # --- control ---
+
+    def stop(self) -> None:
+        """Ask the loop to finish. Safe from another thread."""
+        self._stopping.set()
+        self.speaker.interrupt()
+
+    @property
+    def stopping(self) -> bool:
+        return self._stopping.is_set()
+
+    # --- the loop ---
+
     def run(self) -> None:
-        # Load whisper before opening the mic: the first inference is several
-        # times slower than the rest, and it should not land in the pause after
-        # the user's opening sentence.
-        self.transcriber.warm_up()
+        self._stopping.clear()
+        self._set_state("starting")
+        try:
+            # Load whisper before opening the mic: the first inference is
+            # several times slower than the rest, and it should not land in the
+            # pause after the user's opening sentence.
+            self.transcriber.warm_up()
+            with self.mic, self.speaker:
+                if self.greeting:
+                    self.say(self.greeting)
+                self._loop()
+        except Exception as exc:
+            log.error("voice loop failed: %s: %s", type(exc).__name__, exc)
+            self.events.publish("error", message=f"{type(exc).__name__}: {exc}")
+            raise
+        finally:
+            self._set_state("stopped")
 
-        with self.mic, self.speaker:
-            if self.greeting:
-                self.say(self.greeting)
+    def _loop(self) -> None:
+        while not self.stopping:
+            self._set_state("listening")
+            audio = listen(self.mic, self.vad,
+                           on_speech_start=lambda: self._set_state("hearing"),
+                           stop_check=lambda: self._stopping.is_set(),
+                           on_level=self._report_level)
+            if audio is None:
+                continue
 
-            while True:
-                print("\n[listening]", flush=True)
-                audio = listen(self.mic, self.vad,
-                               on_speech_start=lambda: print("[hearing you]", flush=True))
-                if audio is None:
-                    continue
+            self._set_state("transcribing")
+            heard = self.transcriber.transcribe(audio)
+            if not heard:
+                log.debug("nothing intelligible in %.1fs of audio",
+                          audio.size / self.sample_rate)
+                continue
 
-                heard = self.transcriber.transcribe(audio)
-                if not heard:
-                    log.debug("nothing intelligible in %.1fs of audio",
-                              audio.size / self.sample_rate)
-                    continue
+            self._say_turn("user", heard)
+            if self._is_farewell(heard):
+                self.say("Goodbye.")
+                return
 
-                print(f"you: {heard}")
-                if self._is_farewell(heard):
-                    self.say("Goodbye.")
-                    return
-
-                reply = self._answer(heard)
-                if reply:
-                    print(f"{self.assistant.brain.name.lower()}: {reply}")
-                if self.assistant.should_end:
-                    return
+            reply = self._answer(heard)
+            if reply:
+                self._say_turn("assistant", reply)
+            self.events.publish("facts", facts=self.assistant.memory.facts())
+            if self.assistant.should_end:
+                return
 
     def _answer(self, heard: str) -> str:
         """Run a turn, speaking each sentence as it is written."""
         self.speaker.reset()
+        self._set_state("thinking")
         watcher = self._start_barge_in_watch()
         try:
             return self.assistant.turn(heard, on_sentence=self.speak_sentence)
         except Interrupted:
-            print("[interrupted]")
+            self.events.publish("interrupted")
+            if self.console:
+                print("[interrupted]")
             return ""
         finally:
             self._stop_watching.set()
@@ -211,13 +287,16 @@ class VoiceSession:
             self.speaker.drain()
 
     def speak_sentence(self, sentence: str) -> None:
+        self._set_state("speaking")
+        self.events.publish("sentence", text=sentence)
         if not self.speaker.play(self.voice.stream(sentence)):
             raise Interrupted(sentence)
 
     def say(self, text: str) -> None:
         """Speak one line outside a conversation turn (greeting, goodbye)."""
         self.speaker.reset()
-        print(f"{self.assistant.brain.name.lower()}: {text}")
+        self._set_state("speaking")
+        self._say_turn("assistant", text)
         self.speaker.play(self.voice.stream(text))
         self.speaker.drain()
 
