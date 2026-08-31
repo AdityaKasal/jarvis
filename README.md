@@ -192,3 +192,7 @@ tests/                 pytest; no API keys or audio hardware needed
 They cover the parts that are painful to check by talking to it: turn detection
 against synthetic audio, sentence chunking across arbitrary stream boundaries,
 the memory window, and the streaming tool loop against a stubbed API.
+
+## License
+
+MIT - see [LICENSE](LICENSE).
