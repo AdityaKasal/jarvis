@@ -1,0 +1,71 @@
+# Jarvis configuration. Behaviour lives here; secrets live in .env.
+
+model:
+  id: claude-opus-5
+  # low | medium | high | xhigh | max. A voice turn is judged on latency, so
+  # `low` keeps time-to-first-word down. Note this lowers effort rather than
+  # setting thinking to disabled: with thinking off, Opus 5 will occasionally
+  # narrate a tool call as plain text instead of emitting a tool_use block,
+  # which in a spoken loop just sounds like Jarvis lying about what it did.
+  effort: low
+  # A hard ceiling the model cannot see, not a length target. Reply length is
+  # steered by the system prompt instead - a spoken answer cut off mid-sentence
+  # is worse than one that rambles.
+  max_tokens: 4096
+
+audio:
+  sample_rate: 16000    # whisper's native rate, and what we ask ElevenLabs to return
+  frame_ms: 20
+  input_device: null    # null = system default. `python run.py devices` lists them.
+  output_device: null
+
+vad:
+  # Speech is detected by comparing frame RMS against a noise floor measured
+  # during the first moment of each listen. Ratios, not absolute levels, so the
+  # same numbers work in a quiet room and a loud one.
+  start_ratio: 3.0
+  stop_ratio: 1.8         # lower than start_ratio: once talking, stay latched
+  absolute_floor: 0.004   # never trigger below this, however quiet the room is
+  min_speech_ms: 250      # discard clicks, keyboard taps, door slams
+  silence_hangover_ms: 800  # how long a mid-sentence pause may run before the turn ends
+  preroll_ms: 300         # audio kept from *before* the trigger, so the first
+                          # syllable is not clipped off the front
+  calibration_ms: 400
+  max_utterance_s: 30
+
+stt:
+  model: small.en       # tiny.en | base.en | small.en | medium.en | large-v3
+  # ctranslate2 has no Metal backend, so "cpu" is not a fallback on Apple
+  # silicon - it is the only path, and int8 is the fast one.
+  device: cpu
+  compute_type: int8
+  language: en
+  beam_size: 1          # greedy; measurably faster and barely worse on clean speech
+
+tts:
+  voice_id: 21m00Tcm4TlvDq8ikWAM  # "Rachel", a stock voice. Swap for any in your account.
+  model_id: eleven_flash_v2_5     # ElevenLabs' lowest-latency model
+  stability: 0.5
+  similarity_boost: 0.75
+  speed: 1.0
+
+barge_in:
+  # Cut playback short when you start talking over it. Off by default: with no
+  # acoustic echo cancellation, open speakers feed Jarvis's own voice back into
+  # the mic and it interrupts itself after half a sentence. Turn it on when
+  # you're wearing headphones.
+  enabled: false
+  ratio: 6.0            # far stricter than vad.start_ratio, for the same reason
+
+memory:
+  db: jarvis.db
+  recent_turns: 20      # turns replayed verbatim into the prompt
+  summarize_after: 40   # older turns get folded into a rolling summary past this
+  carry_sessions: 3     # how many previous sessions' summaries to carry forward
+
+assistant:
+  name: Jarvis
+  greeting: "I'm listening."
+  # Heard at the end of a turn, these end the session. Jarvis can also end it
+  # itself with the end_conversation tool.
+  farewells: ["goodbye jarvis", "goodnight jarvis", "bye jarvis", "that's all jarvis"]
