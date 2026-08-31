@@ -6,6 +6,12 @@ remembers the conversation the next time you start it.
 Audio in → [faster-whisper](https://github.com/SYSTRAN/faster-whisper) →
 Claude → [ElevenLabs](https://elevenlabs.io) → audio out.
 
+![The Jarvis app: live state, microphone meter, transcript and memory](docs/app.png)
+
+That screenshot is a real exchange - spoken aloud, transcribed locally, and
+answered using what Jarvis had been told to remember earlier. The orange mark
+on the meter is the level your voice has to cross for a turn to start.
+
 ## How it works
 
 ```
@@ -140,6 +146,29 @@ index or name.
 **Interrupting it.** `barge_in.enabled` is off by default. With open speakers
 and no echo cancellation, Jarvis hears its own voice and interrupts itself
 after half a sentence. Turn it on if you wear headphones.
+
+## Known limitations
+
+**There is no wake word.** Once started, it treats anything above the trigger
+threshold as speech aimed at it - including a television in the same room. In
+testing it cheerfully transcribed a sitcom and answered it. Press Stop when you
+are not talking to it, or it will keep spending tokens on the room. A wake word
+or push-to-talk is the obvious next feature.
+
+**Barge-in is off by default.** Interrupting Jarvis mid-sentence needs acoustic
+echo cancellation, which this does not have; on open speakers it hears its own
+voice and interrupts itself. Turn it on in `config.yaml` when you are wearing
+headphones.
+
+**Bluetooth devices hijack the defaults.** macOS points the default input and
+output at whatever Bluetooth device is connected, so a car handsfree can
+silently become both your microphone and your speaker. `audio.input_device` and
+`audio.output_device` are pinned by name in `config.yaml` for that reason -
+change them to match your machine, and use `run.py devices` to see the names.
+
+**It will not deploy to a server.** It needs a microphone, speakers, and a
+long-lived process holding a ~500 MB model in memory. That is a local
+application, not a web service.
 
 ## Model and cost
 

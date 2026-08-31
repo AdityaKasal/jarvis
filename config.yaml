@@ -20,7 +20,10 @@ audio:
   # follows whatever Bluetooth device is connected, so a car handsfree can
   # quietly become your microphone. `python run.py devices` lists them.
   input_device: "MacBook Pro Microphone"
-  output_device: null
+  # Pinned for the same reason as the input: the system default follows
+  # whatever Bluetooth device is connected, so Jarvis ends up talking into
+  # a car while you wait for it in front of the laptop.
+  output_device: "MacBook Pro Speakers"
 
 vad:
   # Speech is detected by comparing frame RMS against a noise floor measured
