@@ -64,7 +64,7 @@ barge_in:
   # its own voice and interrupts itself. Headphones remove the problem
   # entirely; on speakers, the ratio below has to be measured rather than
   # guessed - `run.py calibrate` gives you the two numbers it sits between.
-  enabled: true
+  enabled: false
   # Tuned against measurement, not guessed. On this machine Jarvis's own voice
   # reaches the microphone at about 0.014 peak, and a normal speaking voice
   # measures about 0.016 - so the usable gap is narrow, and the 250ms of
