@@ -36,6 +36,12 @@ class VadConfig:
     stop_ratio: float = 1.8
     absolute_floor: float = 0.004
     min_speech_ms: int = 250
+    # A dip this short inside the onset does not reset it. Speech is full of
+    # gaps - stops, plosives, the seam between words - and requiring the whole
+    # min_speech_ms to be *unbroken* means a clipped sentence never triggers at
+    # all. Measured on real speech, the longest unbroken run above threshold
+    # can be barely over 250ms even when half of all frames are above it.
+    onset_grace_ms: int = 100
     silence_hangover_ms: int = 800
     preroll_ms: int = 300
     calibration_ms: int = 400
@@ -61,6 +67,10 @@ class VadConfig:
     @property
     def min_speech_frames(self) -> int:
         return self._frames(self.min_speech_ms)
+
+    @property
+    def onset_grace_frames(self) -> int:
+        return self._frames(self.onset_grace_ms)
 
     @property
     def hangover_frames(self) -> int:
@@ -98,6 +108,7 @@ class Vad:
         self.finished = False
         self._calibration: list[float] = []
         self._speech_run = 0
+        self._onset_gap = 0
         self._silence_run = 0
         self._frames: list[np.ndarray] = []
         self._preroll.clear()
@@ -148,15 +159,23 @@ class Vad:
             self._preroll.append(frame)
             if level >= start_level:
                 self._speech_run += 1
+                self._onset_gap = 0
                 if self._speech_run >= cfg.min_speech_frames:
                     self.speaking = True
+                    self._onset_gap = 0
                     self._silence_run = 0
                     # Seed from the pre-roll ring so the first syllable - which
                     # happened before we crossed the threshold - is not clipped.
                     self._frames = list(self._preroll)
                     return "started"
+            elif self._speech_run:
+                # Mid-onset dip: hold the count through a short gap, drop it
+                # once the gap is long enough that this was not one utterance.
+                self._onset_gap += 1
+                if self._onset_gap > cfg.onset_grace_frames:
+                    self._speech_run = 0
+                    self._onset_gap = 0
             else:
-                self._speech_run = 0
                 # Track slow drift (fan spinning up, room filling) so a long
                 # wait does not end with a stale, over-sensitive floor.
                 self.noise_floor = 0.95 * self.noise_floor + 0.05 * level

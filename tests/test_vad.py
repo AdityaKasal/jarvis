@@ -113,3 +113,31 @@ def test_reset_clears_state_between_turns():
     assert not vad.speaking
     assert not vad.calibrated
     assert vad.audio().size == 0
+
+
+def test_onset_survives_the_gaps_between_syllables():
+    """Real speech does not stay above threshold for 250ms unbroken.
+
+    Measured on actual audio, the longest unbroken run can be barely over
+    min_speech_ms even when half of all frames are above threshold. Requiring
+    an unbroken run means a clipped sentence never triggers at all.
+    """
+    vad = Vad(CONFIG)
+    # Two-frame dips, the length of a stop consonant, all the way through.
+    staccato = []
+    for _ in range(12):
+        staccato += [speech()] * 3 + [noise()] * 2
+
+    events = feed(vad, [noise()] * CONFIG.calibration_frames + staccato)
+    assert [kind for _, kind in events] == ["started"]
+
+
+def test_a_long_gap_still_abandons_the_onset():
+    """The grace period is for syllables, not for a cough and then silence."""
+    grace = CONFIG.onset_grace_frames
+    vad = Vad(CONFIG)
+    frames = ([noise()] * CONFIG.calibration_frames
+              + [speech()] * 3            # short of min_speech_frames
+              + [noise()] * (grace + 3)   # too long to be a syllable gap
+              + [speech()] * 3)           # count restarts, never reaches it
+    assert feed(vad, frames) == []

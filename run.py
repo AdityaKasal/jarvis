@@ -164,41 +164,69 @@ def cmd_transcribe(cfg: dict, args) -> int:
 
 
 def cmd_calibrate(cfg: dict, args) -> int:
-    """Live level meter. Run it to pick vad.start_ratio for your room."""
+    """Measure the room, then measure your voice. Prints a `vad:` block.
+
+    The speech phase waits for you rather than running on a timer: a fixed
+    window means whoever is at the mic has to be watching the terminal at the
+    right moment, and if they are not, the measurement comes back with speech
+    quieter than silence and no sign that anything went wrong.
+    """
     from jarvis.audio import Microphone, rms
 
+    device = cfg["audio"].get("input_device")
     quiet: list[float] = []
     loud: list[float] = []
+
     with Microphone(cfg["audio"]["sample_rate"], cfg["audio"]["frame_ms"],
-                    device=cfg["audio"].get("input_device")) as mic:
-        print(f"Stay quiet for {args.seconds}s...")
+                    device=device) as mic:
+        print(f"Stay quiet for {args.seconds:.0f}s...")
         deadline = time.monotonic() + args.seconds
         for frame in mic.frames():
             quiet.append(rms(frame))
             if time.monotonic() >= deadline:
                 break
 
-        print(f"Now talk normally for {args.seconds}s...")
+        floor = float(np.median(quiet))
+        if floor <= 0.00005:
+            print(f"\nThe microphone is delivering silence (level {floor:.5f}).")
+            print("Check macOS microphone permission for your terminal, or pick "
+                  "a different audio.input_device - `run.py devices` lists them.")
+            return 1
+
+        print(f"Room measured ({floor:.4f}). Now talk normally - I'll wait, and "
+              "stop once I've heard enough.")
         mic.drain()
-        deadline = time.monotonic() + args.seconds
+        threshold = max(floor * 2.0, 0.002)
+        needed = int(args.seconds * 1000 / cfg["audio"]["frame_ms"] / 2)
+        give_up = time.monotonic() + 60.0
+
         for frame in mic.frames():
             level = rms(frame)
-            loud.append(level)
-            bar = "#" * min(60, int(level * 600))
-            print(f"\r{level:.4f} {bar:<60}", end="", flush=True)
-            if time.monotonic() >= deadline:
+            if level >= threshold:
+                loud.append(level)
+                bar = "#" * min(50, int(level * 500))
+                print(f"\r  {len(loud) * 100 // needed:>3}%  {bar:<50}",
+                      end="", flush=True)
+            if len(loud) >= needed:
                 break
+            if time.monotonic() >= give_up:
+                print("\n\nHeard nothing above the room noise in 60s.")
+                print("Is the right device selected, and is it unmuted?")
+                return 1
 
-    floor = float(np.median(quiet))
     speech = float(np.percentile(loud, 75))
+    ratio = speech / floor
     print(f"\n\nnoise floor : {floor:.4f}")
     print(f"speech level: {speech:.4f}")
-    if floor <= 0:
-        print("Floor is zero - is the mic muted, or the wrong input device?")
-        return 1
-    ratio = speech / floor
     print(f"ratio       : {ratio:.1f}x")
-    print(f"\nSuggested config.yaml:\n  vad:\n    start_ratio: {max(2.0, ratio / 3):.1f}"
+
+    if ratio < 3:
+        print("\nThat is a narrow margin - the mic is far away, or the room is "
+              "loud. Turn detection will be unreliable; a closer mic helps more "
+              "than any setting below.")
+
+    print(f"\nSuggested config.yaml:\n  vad:"
+          f"\n    start_ratio: {max(2.0, ratio / 3):.1f}"
           f"\n    stop_ratio: {max(1.5, ratio / 5):.1f}"
           f"\n    absolute_floor: {max(0.002, floor * 2):.4f}")
     return 0
