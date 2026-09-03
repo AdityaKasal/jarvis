@@ -334,15 +334,27 @@ def _why(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
+def _key_state(name: str) -> tuple[bool, str]:
+    """(usable, message) for an API key that may be a leftover placeholder."""
+    value = os.environ.get(name)
+    if not value:
+        return False, f"{name} is not set"
+    if value.endswith("...") or value.strip() in ("", "..."):
+        return False, f"{name} is still the placeholder from .env"
+    return True, f"{name} is set"
+
+
 def cmd_doctor(cfg: dict) -> int:
     """Check everything that can be checked without saying a word."""
     ok = True
 
+    usable = {}
     for key in ("ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY"):
-        if os.environ.get(key):
-            print(f"  ok    {key} is set")
+        usable[key], message = _key_state(key)
+        if usable[key]:
+            print(f"  ok    {message}")
         else:
-            print(f"  FAIL  {key} is not set (copy .env.example to .env)")
+            print(f"  FAIL  {message} (run install.py, or edit .env)")
             ok = False
 
     try:
@@ -368,7 +380,7 @@ def cmd_doctor(cfg: dict) -> int:
         print(f"  FAIL  whisper: {type(exc).__name__}: {exc}")
         ok = False
 
-    if os.environ.get("ELEVENLABS_API_KEY"):
+    if usable["ELEVENLABS_API_KEY"]:
         try:
             from jarvis.tts import Voice
             # Synthesise one word and count the bytes. This is what catches a
@@ -383,7 +395,7 @@ def cmd_doctor(cfg: dict) -> int:
                   "`run.py voices` lists the ones on your account)")
             ok = False
 
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    if usable["ANTHROPIC_API_KEY"]:
         try:
             import anthropic
             reply = anthropic.Anthropic().messages.create(

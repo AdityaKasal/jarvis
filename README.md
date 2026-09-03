@@ -57,28 +57,36 @@ which are in the prompt of every future session.
 
 ## Setup
 
-Needs Python 3.11–3.13. (`ctranslate2`, under faster-whisper, has no 3.14
-wheels yet, so 3.14 will fail to install.)
+Double-click **`Install Jarvis.command`** on macOS, or **`install.bat`** on
+Windows. On Linux run `./install.sh`.
+
+It finds a usable Python, builds the virtualenv, installs everything, asks for
+your two API keys, downloads the speech model, and generates a double-clickable
+launcher. Run it again any time - it skips whatever is already done.
+
+You need two keys, and it will prompt for both:
+
+| Key | For | Where |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | the conversation | console.anthropic.com/settings/keys |
+| `ELEVENLABS_API_KEY` | the voice | elevenlabs.io/app/settings/api-keys |
+
+Speech-to-text runs locally on your machine, so it needs no key and costs
+nothing.
+
+If you would rather do it by hand:
 
 ```bash
 python3.13 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-cp .env.example .env   # then add your two API keys
-```
-
-Check everything before you talk to it:
-
-```bash
+.venv/bin/python -m pip install -r requirements.txt
+cp .env.example .env        # then fill in the two keys
 .venv/bin/python run.py doctor
 ```
 
-That verifies both keys, finds your audio devices, downloads and loads the
-whisper model, and makes one small Claude request. The first run downloads
-~500 MB for `small.en`.
-
-macOS will ask for microphone permission the first time you run `talk` or
-`listen`. If it never asks and there is no input device, grant it under System
-Settings → Privacy & Security → Microphone for your terminal.
+Python 3.9 to 3.13. Not 3.14: ctranslate2, which faster-whisper is built on,
+publishes no wheels for it, and pip's attempt to build it from source fails
+with compiler errors that say nothing about the real problem. The installer
+checks this before it does anything else.
 
 ## Using it
 
