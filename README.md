@@ -252,6 +252,21 @@ They cover the parts that are painful to check by talking to it: turn detection
 against synthetic audio, sentence chunking across arbitrary stream boundaries,
 the memory window, and the streaming tool loop against a stubbed API.
 
+## Why there is a vercel.json
+
+Jarvis cannot run on Vercel, or on any serverless host. It needs a microphone,
+a speaker, a 500 MB speech model held in memory, and a process that stays alive
+between requests - none of which exist in a datacenter function that is billed
+by the hundred milliseconds. Audio never leaves your machine, which is the
+point.
+
+Vercel's repo-import email had connected this repository anyway, so every push
+produced a failed production build. `vercel.json` turns those off:
+
+```json
+{ "git": { "deploymentEnabled": false } }
+```
+
 ## License
 
 MIT - see [LICENSE](LICENSE).
